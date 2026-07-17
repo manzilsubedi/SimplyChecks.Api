@@ -62,6 +62,16 @@ app.MapAuthEndpoints();
 app.MapJobEndpoints();
 app.MapInspectionEndpoints();
 
+// Apply any pending EF Core migrations on startup. This means a fresh
+// server (or a new deploy) builds its own schema — no manual
+// "dotnet ef database update" step, which matters on the droplet where
+// the .NET SDK isn't installed.
+using (var scope = app.Services.CreateScope())
+{
+    var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+    db.Database.Migrate();
+}
+
 // Make sure there's at least one user to log in with (first run only).
 await app.SeedDefaultUserAsync();
 

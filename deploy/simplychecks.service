@@ -1,0 +1,22 @@
+[Unit]
+# systemd service that keeps the API running: starts on boot, restarts
+# on crash, and waits for the network + database to be up first.
+Description=simplyChecks API
+After=network.target postgresql.service
+
+[Service]
+WorkingDirectory=/opt/simplychecks
+# The self-contained publish produces a native Linux executable.
+ExecStart=/opt/simplychecks/SimplyChecks.Api
+Restart=always
+RestartSec=5
+User=www-data
+Environment=ASPNETCORE_ENVIRONMENT=Production
+# Listen only on localhost — nginx sits in front and handles HTTPS.
+Environment=ASPNETCORE_URLS=http://localhost:5000
+# Secrets (DB password, JWT key, seed login) live in this root-only file,
+# NOT in the repo.
+EnvironmentFile=/etc/simplychecks/simplychecks.env
+
+[Install]
+WantedBy=multi-user.target
