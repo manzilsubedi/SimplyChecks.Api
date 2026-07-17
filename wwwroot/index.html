@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>simplyChecks Admin</title>
+<style>
+  * { box-sizing: border-box; margin: 0; }
+  body { font-family: system-ui, sans-serif; background: #f5f6fa; color: #333; }
+  header { background: #1a73e8; color: #fff; padding: 14px 24px; display: flex; justify-content: space-between; align-items: center; }
+  header h1 { font-size: 18px; }
+  header button { background: rgba(255,255,255,.2); color: #fff; border: 0; padding: 8px 14px; border-radius: 6px; cursor: pointer; }
+  main { max-width: 960px; margin: 24px auto; padding: 0 16px; }
+  .card { background: #fff; border-radius: 10px; padding: 20px; margin-bottom: 16px; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
+  h2 { font-size: 16px; margin-bottom: 14px; color: #1a73e8; }
+  input, button.primary { font-size: 14px; }
+  input { width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px; margin-bottom: 10px; }
+  button.primary { background: #1a73e8; color: #fff; border: 0; padding: 10px 18px; border-radius: 6px; cursor: pointer; }
+  button.primary:disabled { opacity: .6; }
+  .tabs { display: flex; gap: 8px; margin-bottom: 16px; }
+  .tabs button { flex: 1; padding: 10px; border: 0; border-radius: 8px; background: #fff; cursor: pointer; font-weight: 600; color: #666; }
+  .tabs button.active { background: #1a73e8; color: #fff; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th, td { text-align: left; padding: 10px 8px; border-bottom: 1px solid #eee; }
+  th { color: #888; font-size: 12px; text-transform: uppercase; }
+  .badge { padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; }
+  .badge.pending { background: #fff3cd; color: #856404; }
+  .badge.completed { background: #d4edda; color: #155724; }
+  .badge.pass { background: #d4edda; color: #155724; }
+  .badge.fail { background: #f8d7da; color: #721c24; }
+  .report { border: 1px solid #eee; border-radius: 8px; padding: 14px; margin-bottom: 12px; }
+  .report summary { cursor: pointer; font-weight: 600; }
+  .result-row { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid #f4f4f4; }
+  .result-row span:first-child { flex: 1; }
+  .result-row img { width: 90px; height: 68px; object-fit: cover; border-radius: 6px; cursor: pointer; }
+  .notes { background: #f8f9fa; border-radius: 6px; padding: 10px; margin-top: 10px; font-size: 13px; color: #555; }
+  .signature-box { margin-top: 12px; padding: 10px; border: 1px dashed #ccc; border-radius: 8px; font-size: 13px; }
+  .signature-svg { display: block; max-width: 320px; max-height: 120px; margin-top: 6px; background: #fafafa; border-radius: 6px; }
+  #login-view { max-width: 360px; margin: 80px auto; }
+  .error { color: #c62828; font-size: 13px; margin-bottom: 8px; }
+  .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  dialog { border: 0; border-radius: 10px; padding: 8px; max-width: 90vw; }
+  dialog img { max-width: 85vw; max-height: 85vh; display: block; }
+</style>
+</head>
+<body>
+
+<div id="login-view">
+  <div class="card">
+    <h2>simplyChecks Admin</h2>
+    <div id="login-error" class="error"></div>
+    <input id="email" type="email" placeholder="Email">
+    <input id="password" type="password" placeholder="Password">
+    <button class="primary" onclick="doLogin()">Log In</button>
+  </div>
+</div>
+
+<div id="app-view" style="display:none">
+  <header>
+    <h1>simplyChecks Admin</h1>
+    <button onclick="logout()">Log Out</button>
+  </header>
+  <main>
+    <div class="tabs">
+      <button id="tab-jobs" class="active" onclick="showTab('jobs')">Jobs</button>
+      <button id="tab-reports" onclick="showTab('reports')">Inspection Reports</button>
+    </div>
+
+    <div id="jobs-view">
+      <div class="card">
+        <h2>Create Job</h2>
+        <input id="job-address" placeholder="Address">
+        <div class="row2">
+          <input id="job-tenant" placeholder="Tenant name">
+          <input id="job-phone" placeholder="Phone">
+        </div>
+        <input id="job-due" type="date">
+        <button class="primary" onclick="createJob()">Create Job</button>
+      </div>
+      <div class="card">
+        <h2>All Jobs</h2>
+        <table>
+          <thead><tr><th>Address</th><th>Tenant</th><th>Due</th><th>Status</th></tr></thead>
+          <tbody id="jobs-body"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div id="reports-view" style="display:none">
+      <div class="card">
+        <h2>Inspection Reports</h2>
+        <div id="reports-list"></div>
+      </div>
+    </div>
+  </main>
+</div>
+
+<dialog id="photo-dialog" onclick="this.close()"><img id="photo-full"></dialog>
+
+<script>
+let token = localStorage.getItem('token');
+let checklist = []; // id -> label lookup, loaded after login
+
+async function api(path, options = {}) {
+  const res = await fetch(path, {
+    ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': 'Bearer ' + token,
+      ...options.headers,
+    },
+  });
+  if (res.status === 401) { logout(); throw new Error('unauthorized'); }
+  if (!res.ok) throw new Error('API error ' + res.status);
+  const text = await res.text();
+  return text ? JSON.parse(text) : undefined;
+}
+
+async function doLogin() {
+  const email = document.getElementById('email').value;
+  const password = document.getElementById('password').value;
+  const res = await fetch('/api/auth/login', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({email, password}),
+  });
+  if (!res.ok) {
+    document.getElementById('login-error').textContent = 'Wrong email or password.';
+    return;
+  }
+  token = (await res.json()).token;
+  localStorage.setItem('token', token);
+  start();
+}
+
+function logout() {
+  localStorage.removeItem('token');
+  token = null;
+  document.getElementById('app-view').style.display = 'none';
+  document.getElementById('login-view').style.display = 'block';
+}
+
+function showTab(tab) {
+  document.getElementById('jobs-view').style.display = tab === 'jobs' ? 'block' : 'none';
+  document.getElementById('reports-view').style.display = tab === 'reports' ? 'block' : 'none';
+  document.getElementById('tab-jobs').classList.toggle('active', tab === 'jobs');
+  document.getElementById('tab-reports').classList.toggle('active', tab === 'reports');
+  if (tab === 'reports') loadReports();
+}
+
+async function loadJobs() {
+  const jobs = await api('/api/jobs?all=true');
+  document.getElementById('jobs-body').innerHTML = jobs.map(j => `
+    <tr>
+      <td>${esc(j.address)}</td>
+      <td>${esc(j.tenant)}</td>
+      <td>${j.dueDate}</td>
+      <td><span class="badge ${j.status}">${j.status}</span></td>
+    </tr>`).join('');
+}
+
+async function createJob() {
+  const address = document.getElementById('job-address').value.trim();
+  const tenant = document.getElementById('job-tenant').value.trim();
+  const phone = document.getElementById('job-phone').value.trim();
+  const dueDate = document.getElementById('job-due').value;
+  if (!address || !tenant || !dueDate) { alert('Address, tenant and due date are required.'); return; }
+  await api('/api/jobs', {method: 'POST', body: JSON.stringify({address, tenant, phone, dueDate})});
+  for (const id of ['job-address','job-tenant','job-phone','job-due']) document.getElementById(id).value = '';
+  loadJobs();
+}
+
+async function loadReports() {
+  const inspections = await api('/api/inspections');
+  const list = document.getElementById('reports-list');
+  if (inspections.length === 0) { list.innerHTML = '<p>No inspections submitted yet.</p>'; return; }
+  list.innerHTML = inspections.map(insp => `
+    <details class="report">
+      <summary>
+        ${esc(insp.job?.address ?? insp.jobId)} —
+        ${new Date(insp.submittedAt).toLocaleString()}
+        (${insp.results.filter(r => r.status === 'fail').length} fails)
+      </summary>
+      <div>
+        ${insp.results.map(r => `
+          <div class="result-row">
+            <span>${esc(checklist[r.itemId] ?? r.itemId)}</span>
+            <span class="badge ${r.status}">${r.status}</span>
+            ${r.photoFileName ? `<img data-photo="${esc(r.photoFileName)}" alt="photo">` : ''}
+          </div>`).join('')}
+        ${insp.notes ? `<div class="notes"><strong>Notes:</strong> ${esc(insp.notes)}</div>` : ''}
+        ${signatureBlock(insp)}
+      </div>
+    </details>`).join('');
+  loadPhotos(list);
+}
+
+// Photos need the JWT header, so <img src> can't fetch them directly —
+// fetch as blobs and point the imgs at object URLs instead.
+async function loadPhotos(container) {
+  for (const img of container.querySelectorAll('img[data-photo]')) {
+    try {
+      const res = await fetch('/api/photos/' + img.dataset.photo, {
+        headers: {'Authorization': 'Bearer ' + token},
+      });
+      if (!res.ok) continue;
+      const url = URL.createObjectURL(await res.blob());
+      img.src = url;
+      img.onclick = e => {
+        e.stopPropagation();
+        document.getElementById('photo-full').src = url;
+        document.getElementById('photo-dialog').showModal();
+      };
+    } catch {}
+  }
+}
+
+// Rebuilds the tenant's signature drawing from the stroke data the app
+// captured, as an inline SVG.
+function signatureBlock(insp) {
+  if (!insp.signerName && !insp.signatureJson) return '';
+  let svg = '';
+  try {
+    const sig = JSON.parse(insp.signatureJson);
+    const paths = sig.strokes.map(stroke =>
+      `<path d="${stroke.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x} ${p.y}`).join(' ')}"
+        stroke="#1a2740" stroke-width="2.5" fill="none"
+        stroke-linecap="round" stroke-linejoin="round"/>`).join('');
+    svg = `<svg viewBox="0 0 ${sig.width} ${sig.height}" class="signature-svg">${paths}</svg>`;
+  } catch {}
+  return `<div class="signature-box">
+    <strong>Signed by:</strong> ${esc(insp.signerName)}
+    ${svg}
+  </div>`;
+}
+
+function esc(s) {
+  return String(s ?? '').replace(/[&<>"']/g, c =>
+    ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+async function start() {
+  try {
+    const items = await api('/api/checklist');
+    checklist = Object.fromEntries(items.map(i => [i.id, i.label]));
+    document.getElementById('login-view').style.display = 'none';
+    document.getElementById('app-view').style.display = 'block';
+    loadJobs();
+  } catch { logout(); }
+}
+
+if (token) start();
+</script>
+</body>
+</html>
